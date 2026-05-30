@@ -1,0 +1,10 @@
+# Секреты
+credentials.json
+.env
+
+# Сгенерированные аудиофайлы
+audio/
+
+# OS
+.DS_Store
+Thumbs.db
