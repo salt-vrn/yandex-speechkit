@@ -44,10 +44,14 @@ def voice_reply(text: str, voice: str = "oksana",
         print(f"⚠️ Yandex TTS error: {result.stderr[:200]}", file=sys.stderr)
         return None
 
-    # Ищем MEDIA: в stdout (tts.py его печатает)
+    # Ищем [[audio_as_voice]] и MEDIA: в stdout (tts.py их печатает)
+    has_voice_tag = False
     for line in result.stdout.split("\n"):
+        if "[[audio_as_voice]]" in line:
+            has_voice_tag = True
         if line.startswith("MEDIA:"):
-            return line.strip()
+            path = line.strip()
+            return f"[[audio_as_voice]]\n{path}" if has_voice_tag else path
 
     # Fallback: ищем по "Сохранено:" и собираем путь
     for line in result.stdout.split("\n"):
@@ -56,7 +60,7 @@ def voice_reply(text: str, voice: str = "oksana",
             parts = line.split("Сохранено:")
             if len(parts) > 1:
                 path = parts[1].strip().split(" ")[0]
-                return f"MEDIA:{path}"
+                return f"[[audio_as_voice]]\nMEDIA:{path}"
 
     return None
 

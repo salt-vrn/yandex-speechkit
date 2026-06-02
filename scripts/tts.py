@@ -223,8 +223,8 @@ def synthesize(text: str, voice: str = "oksana",
     size_kb = len(all_audio) / 1024
     print(f"✅ Сохранено: {out_path} ({size_kb:.1f} KB)")
 
-    # ВАЖНО: MEDIA: путь для Hermes — чтобы kiri_voice.py и агент могли найти файл
-    print(f"MEDIA:{out_path}")
+    # ВАЖНО: [[audio_as_voice]] + MEDIA: для Hermes — gateway доставит как голосовое
+    print(f"[[audio_as_voice]]\nMEDIA:{out_path}")
 
     return out_path
 

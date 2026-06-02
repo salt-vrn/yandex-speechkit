@@ -1,7 +1,7 @@
 ---
 name: yandex-speechkit
 description: "Yandex SpeechKit для Telegram-агентов: голосовые ответы (TTS) и распознавание голосовых сообщений (STT). Чистый скилл, никакой телефонии."
-version: 3.5
+version: 3.6
 triggers:
   - yandex
   - speechkit
@@ -91,15 +91,18 @@ python3 scripts/stt.py audio/tts_oksana_Привет.*.ogg
 ### Алгоритм
 
 1. Написать текстовый ответ (как обычно)
-2. Вызвать `python3 scripts/tts.py "текст ответа"` — получить путь к .ogg
-3. Вставить `MEDIA:/полный/путь/к/audio.ogg` в конец ответа — **отдельной строкой, не внутри markdown**
+2. Вызвать `python3 scripts/tts.py "текст ответа"` — получить `[[audio_as_voice]]` + `MEDIA:` путь к .ogg
+3. Вставить обе строки в конец ответа — **отдельными строками, не внутри markdown**
 
 **Пример:**
 ```
 Ответ на вопрос...
 
-MEDIA:/root/.hermes/profiles/профиль/skills/yandex-speechkit/audio/tts_oksana_Ответ.ogg
+[[audio_as_voice]]
+MEDIA:/root/.hermes/skills/yandex-speechkit/audio/tts_oksana_Vototvet.ogg
 ```
+
+**Важно:** `[[audio_as_voice]]` — тег Hermes gateway, который говорит "отправить .ogg как голосовое сообщение (пузырь)", а не как файл-вложение. Скрипт tts.py уже выводит оба тега.
 
 ### Когда отвечать голосом?
 
@@ -123,7 +126,7 @@ message(action="send", filePath="/path/to/audio.ogg", asVoice=true, buttons=[])
 
 ### Об OpenClaw и MEDIA:
 
-Строка `MEDIA:` в выводе tts.py **безопасна** для OpenClaw — агент просто её игнорирует и берёт путь из строки `✅ Сохранено:`. Не нужно удалять `MEDIA:` из скриптов — она нужна Hermes-агентам.
+Строки `[[audio_as_voice]]` и `MEDIA:` в выводе tts.py **безопасны** для OpenClaw — агент просто их игнорирует и берёт путь из строки `✅ Сохранено:`. Не нужно удалять эти теги из скриптов — они нужны Hermes-агентам.
 
 ## Как агент понимает голосовые
 
@@ -235,6 +238,9 @@ Yandex TTS v1 **не принимает JSON**. Ошибка «unsupported conte
 ### MEDIA: отдельной строкой
 `MEDIA:` должен быть на отдельной строке, не внутри markdown-форматирования. Иначе Telegram не распознает как файл.
 
+### [[audio_as_voice]] — тег для голосового пузыря
+Hermes gateway проверяет наличие `[[audio_as_voice]]` в ответе агента. Без этого тега .ogg файл отправляется как документ (вложение), а не как голосовое сообщение (пузырь). Скрипт `tts.py` уже выводит `[[audio_as_voice]]` перед `MEDIA:`. Если парсишь stdout вручную — обязательно сохраняй оба тега.
+
 ### send_message = дубликаты
 Если вставить `MEDIA:` в обычный ответ — gateway доставит одно сообщение. Если вызвать `send_message` отдельно — будут два сообщения. Всегда вставлять `MEDIA:` в ответ агента.
 
@@ -272,6 +278,9 @@ Telegram голосовые сообщения требуют `.ogg` (Opus). И�
 
 ### ffmpeg — обязателен для STT
 `stt.py` использует `ffmpeg` и `ffprobe` для разбивки длинных аудио (>25 сек / >900 KB). Без ffmpeg длинные голосовые не распознаются. Установка: `apt install ffmpeg` или `brew install ffmpeg`.
+
+### Whisper: язык — не BCP-47
+faster_whisper (local provider) принимает ISO 639-1 коды (`ru`, `en`), а не BCP-47 (`ru-RU`, `en-US`). При возврате на Whisper убедитесь что `stt.local.language: ru` (не `ru-RU`).
 
 ### OpenClaw: MEDIA: в stdout не используется
 Строка `MEDIA:` в выводе tts.py нужна только для Hermes. OpenClaw-агент берёт путь из строки `✅ Сохранено:` и отправляет через `message(filePath=..., asVoice=true, buttons=[])`. MEDIA: не мешает, но и не помогает.

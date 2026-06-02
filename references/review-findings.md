@@ -107,3 +107,14 @@
 29. **PITFALLS** — добавлены: "ffmpeg обязателен для STT" и "OpenClaw: MEDIA: в stdout не используется".
 
 30. **Установка на OpenClaw** — шаги 5-7: настройка tools.media.audio, restart gateway, проверка лога.
+
+## v3.6 — voice delivery fix
+
+31. **[[audio_as_voice]] tag** — tts.py и kiri_voice.py теперь выводят `[[audio_as_voice]]` перед `MEDIA:`. Без этого тега Hermes gateway отправляет .ogg как документ, а не как голосовое сообщение. Нашёл агент на Hermes (проверено в gateway/platforms/base.py:2609).
+
+32. **Whisper BCP-47 pitfall** — faster_whisper принимает ISO 639-1 (`ru`), не BCP-47 (`ru-RU`). Добавлен pitfall.
+
+33. **SKILL.md** — обновлён алгоритм "Как агенту отвечать голосом" с `[[audio_as_voice]]` тегом.
+
+**Отвергнуто:**
+- Пункт 5: "{{MediaPath}} — двойные скобки = литерал в Hermes". Агент путает Hermes и OpenClaw. Документация OpenClaw явно использует `{{MediaPath}}` как плейсхолдер.
