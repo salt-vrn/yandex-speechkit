@@ -1,7 +1,7 @@
 ---
 name: yandex-speechkit
 description: "Yandex SpeechKit для Telegram-агентов: голосовые ответы (TTS) и распознавание голосовых сообщений (STT). Чистый скилл, никакой телефонии."
-version: 3.1
+version: 3.2
 triggers:
   - yandex
   - speechkit
@@ -106,6 +106,24 @@ MEDIA:/root/.hermes/profiles/профиль/skills/yandex-speechkit/audio/tts_ok
 - Если пользователь просит голосовой ответ
 - По умолчанию — текст
 
+### Для OpenClaw-агентов
+
+OpenClaw **не использует** `MEDIA:` в stdout. Вместо этого:
+
+1. Сгенерировать аудио: `python3 scripts/tts.py "текст"`
+2. Получить путь к файлу из stdout (строка после `MEDIA:` или из `✅ Сохранено:`)
+3. Отправить через message tool:
+
+```
+message(action="send", filePath="/path/to/audio.ogg", asVoice=true, buttons=[])
+```
+
+**MEDIA:** в stdout можно игнорировать — это для Hermes. OpenClaw берёт путь к файлу.
+
+### Об OpenClaw и MEDIA:
+
+Строка `MEDIA:` в выводе tts.py **безопасна** для OpenClaw — агент просто её игнорирует и берёт путь из строки `✅ Сохранено:`. Не нужно удалять `MEDIA:` из скриптов — она нужна Hermes-агентам.
+
 ## Как агент понимает голосовые
 
 Hermes gateway **автоматически** транскрибирует входящие голосовые сообщения через встроенный Whisper. Транскрипция приходит в контексте агента.
@@ -200,6 +218,7 @@ python3 scripts/kiri_voice.py "Текст ответа" [--voice oksana] [--form
 ```
 - Генерирует аудио и возвращает готовый `MEDIA:...` путь
 - Удобно для вставки в ответ агента
+- **Примечание:** имя `kiri_voice.py` — историческое (от агента "Кири"). Скрипт универсален и работает на любой платформе. OpenClaw-агенты могут использовать его для генерации аудио, а путь брать из строки `✅ Сохранено:`
 
 ## PITFALLS
 
@@ -227,6 +246,7 @@ Telegram голосовые сообщения требуют `.ogg` (Opus). И�
 1. `YANDEX_API_KEY` (переменная окружения)
 2. `credentials.json` рядом с SKILL.md (директория проекта)
 3. `credentials.json` в workspace текущего Hermes-профиля (`$HERMES_HOME/credentials.json`)
+4. `credentials.json` в workspace OpenClaw (`~/.openclaw/workspace/credentials.json`)
 
 ### Python 3.8+
 Скрипты используют `Optional[str]` из `typing` — совместимо с Python 3.8+.
@@ -257,4 +277,44 @@ yandex-speechkit/
 ├── references/
 │   └── review-findings.md ← история ревью, найденные баги, почему так сделано
 └── audio/             ← сгенерированные .ogg файлы
+```
+
+## Установка на OpenClaw
+
+### Шаги
+
+1. Скопировать скилл в `~/.openclaw/workspace/skills/yandex-speechkit/`
+2. Создать `credentials.json` с API-ключом (рядом с SKILL.md или в `~/.openclaw/workspace/credentials.json`)
+3. Установить зависимости: `pip install requests`
+4. Обновить `TOOLS.md` (шаблон ниже)
+
+### Шаблон TOOLS.md для OpenClaw
+
+Добавить в `TOOLS.md` агента:
+
+```markdown
+## Yandex SpeechKit — голосовой модуль
+
+### TTS (текст → голос)
+Сгенерировать аудио:
+```
+python3 ~/.openclaw/workspace/skills/yandex-speechkit/scripts/tts.py "Текст для озвучки" --voice oksana
+```
+Путь к файлу будет в stdout (строка `✅ Сохранено:`).
+
+Отправить голосовое:
+```
+message(action="send", filePath="/path/to/audio.ogg", asVoice=true, buttons=[])
+```
+
+### STT (голос → текст)
+Распознать аудио:
+```
+python3 ~/.openclaw/workspace/skills/yandex-speechkit/scripts/stt.py /path/to/audio.ogg
+```
+
+### Голоса
+- oksana (по умолчанию), alena, filipp, ermil, jane, omazh, zahar
+- Формат: oggopus (по умолчанию, для Telegram)
+- Лимит: 5000 символов за запрос
 ```

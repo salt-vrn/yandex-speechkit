@@ -96,18 +96,25 @@ def get_api_key() -> str:
     # credentials.json в папке проекта
     cred_file = PROJECT_DIR / "credentials.json"
     if not cred_file.exists():
-        # credentials.json в workspace текущего Hermes-профиля
+        # credentials.json в workspace (Hermes или OpenClaw)
         hermes_home = os.environ.get("HERMES_HOME")
         if hermes_home:
             cred_file = Path(hermes_home) / "credentials.json"
         else:
-            profiles_dir = Path.home() / ".hermes" / "profiles"
+            home = Path.home()
+            # Hermes: ~/.hermes/profiles/*/workspace/credentials.json
+            profiles_dir = home / ".hermes" / "profiles"
             if profiles_dir.exists():
                 for profile_dir in profiles_dir.iterdir():
                     candidate = profile_dir / "workspace" / "credentials.json"
                     if candidate.exists():
                         cred_file = candidate
                         break
+            # OpenClaw: ~/.openclaw/workspace/credentials.json
+            if not cred_file.exists():
+                openclaw_cred = home / ".openclaw" / "workspace" / "credentials.json"
+                if openclaw_cred.exists():
+                    cred_file = openclaw_cred
 
     if cred_file.exists():
         try:
