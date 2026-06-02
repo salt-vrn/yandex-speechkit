@@ -60,11 +60,17 @@
 - ✅ Автобreak (319 символов → 2 части → склейка → 204.8 KB)
 - ✅ MEDIA: доставка в Telegram (голосовое сообщение дошло)
 
-### v3 (pending)
-- ⏳ TTS с голосом oksana (новый default)
+### v3 (tested)
+- ✅ TTS с голосом oksana (новый default)
+- ✅ STT с auto-chunking (ffprobe + ffmpeg)
+- ✅ kiri_voice.py (обёртка → MEDIA:)
+- ✅ Синтаксис Python: все файлы проходят `ast.parse()`
+- ✅ MEDIA: доставка в Telegram (голосовое сообщение дошло)
 - ⏳ TTS с текстом >5000 символов (новый лимит)
-- ⏳ STT с auto-chunking
-- ⏳ Синтаксис Python: все файлы проходят `ast.parse()`
+
+### v3.1 (bug fix)
+21. **Кириллица в имени файла ломает MEDIA: доставку** — `\w` в Python regex матчит Unicode, включая кириллицу. Файл `tts_oksana_Привет_мир.ogg` не доставляется в Telegram. Исправлено на `[^a-zA-Z0-9_-]` + fallback на timestamp.
+- Нашёл: Vector (агент на Hermes, SaaS сервер)
 
 ## Источники информации (v3)
 

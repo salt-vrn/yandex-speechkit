@@ -163,9 +163,10 @@ def synthesize(text: str, voice: str = "oksana",
     if output:
         out_path = Path(output)
     else:
-        safe_name = re.sub(r'[^\w\s-]', '', text[:30]).strip().replace(" ", "_")
+        # Only ASCII in filenames — Cyrillic breaks MEDIA: delivery in Telegram
+        safe_name = re.sub(r'[^a-zA-Z0-9_-]', '', text[:30]).strip().rstrip('_')
         if not safe_name:
-            safe_name = "tts_output"
+            safe_name = f"tts_{int(time.time())}"
         out_path = audio_dir / f"tts_{voice}_{safe_name}.{ext}"
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
