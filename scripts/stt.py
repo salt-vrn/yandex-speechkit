@@ -243,6 +243,10 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
+    import datetime
+    with open("/tmp/yandex-stt.log", "a") as _f:
+        _f.write(f"{datetime.datetime.now().isoformat()} STT called: {args.file} lang={args.lang}\n")
+
     result = recognize(
         file_path=args.file,
         lang=args.lang,
@@ -253,3 +257,5 @@ if __name__ == "__main__":
     # Print transcript to stdout (diagnostics go to stderr)
     if result:
         print(result)
+        with open("/tmp/yandex-stt.log", "a") as _f:
+            _f.write(f"{datetime.datetime.now().isoformat()} STT result: {result[:100]}\n")

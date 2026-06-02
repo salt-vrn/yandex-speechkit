@@ -126,7 +126,13 @@ message(action="send", filePath="/path/to/audio.ogg", asVoice=true, buttons=[])
 
 ## Как агент понимает голосовые
 
-Hermes gateway **автоматически** транскрибирует входящие голосовые сообщения через встроенный Whisper. Транскрипция приходит в контексте агента.
+Hermes gateway **автоматически** транскрибирует входящие голосовые сообщения. Провайдер STT настраивается в `config.yaml`:
+
+- **local** (по умолчанию) — faster-whisper. Плохо работает с русским языком.
+- **yandex** (рекомендуется для русского) — command-type provider через `stt.py`. Настройка ниже.
+- **groq/openai/mistral** — облачные Whisper API.
+
+После настройки Yandex STT (см. секцию ниже) gateway вызывает `stt.py` как внешнюю команду для каждого входящего голосового. Транскрипция приходит в контексте агента автоматически.
 
 **Не нужно** вручную искать аудиофайлы и прогонять через `stt.py` — это только для тестов.
 
@@ -257,6 +263,15 @@ Telegram голосовые сообщения требуют `.ogg` (Opus). И�
 ### FFmpeg для STT
 Для распознавания длинных аудио (>25 сек) нужен `ffmpeg` и `ffprobe`. Установка: `apt install ffmpeg` или `brew install ffmpeg`.
 
+### stdout command provider — только текст!
+Когда `stt.py` используется как command-type STT provider в Hermes (`stt.providers.yandex.type: command`), **stdout = только распознанный текст**. Все диагностические сообщения (🎤, ✅, ⚠️) обязаны идти в `stderr` (`print(..., file=sys.stderr)`). Если в stdout попадёт мусор — Hermes передаст его агенту как транскрипцию, и ответ будет испорчен. Скрипт `stt.py` уже исправлен (v3.3), но если модифицируешь — проверяй `2>/dev/null` при тесте.
+
+### credentials.json — два имени ключа
+Скрипты проверяют оба имени: `yandex_speechkit_api_key` и `yandex_api_key`. В документации AI Studio ключ называется `YANDEX_API_KEY`, но в инструкциях установки скилла используется `yandex_speechkit_api_key`. Оба работают.
+
+### Whisper плохо работает с русским
+Встроенный Whisper в Hermes (local provider) плохо распознаёт русскую речь — пропускает слова, путает окончания. Yandex SpeechKit значительно лучше для русского языка. Это главная причина настроить command STT provider вместо local/Groq.
+
 ## Цены (ориентировочно)
 
 - TTS: ~0.5–1.5 ₽ за 1000 символов
@@ -275,7 +290,8 @@ yandex-speechkit/
 │   ├── stt.py         ← аудио → текст (автобreak >25 сек)
 │   └── kiri_voice.py  ← обёртка MEDIA: для Hermes
 ├── references/
-│   └── review-findings.md ← история ревью, найденные баги, почему так сделано
+│   ├── review-findings.md ← история ревью, найденные баги, почему так сделано
+│   └── hermes-stt-integration.md ← как Hermes вызывает command STT, плейсхолдеры, pitfalls
 └── audio/             ← сгенерированные .ogg файлы
 ```
 
@@ -335,6 +351,33 @@ python3 /root/.hermes/skills/yandex-speechkit/scripts/stt.py /path/to/audio.ogg 
 hermes config set stt.provider local
 hermes gateway restart
 ```
+
+### Troubleshooting: какой провайдер используется?
+
+Hermes не пишет в логи какой STT провайдер обработал голосовое. Чтобы проверить:
+
+1. **Добавить логирование в stt.py** (в блок `if __name__ == "__main__"`):
+```python
+import datetime
+with open("/tmp/yandex-stt.log", "a") as _f:
+    _f.write(f"{datetime.datetime.now().isoformat()} STT called: {args.file} lang={args.lang}\n")
+```
+
+2. Отправить голосовое сообщение агенту.
+
+3. Проверить лог:
+```bash
+cat /tmp/yandex-stt.log
+```
+Если файл пуст или не существует — Yandex STT **не вызывался** (gateway использует другой провайдер).
+
+4. **Проверить stdout vs stderr** при ручном тесте:
+```bash
+python3 scripts/stt.py /path/to/audio.ogg 1>/tmp/out.txt 2>/tmp/err.txt
+cat /tmp/out.txt  # ← только текст транскрипции
+cat /tmp/err.txt  # ← диагностика (🎤, ✅)
+```
+Если в stdout есть эмодзи-строки — сломан redirect в stderr, Hermes получит мусор.
 
 ## Установка на OpenClaw
 
