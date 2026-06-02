@@ -80,7 +80,10 @@ def split_audio(file_path: str, chunk_duration: int = MAX_CHUNK_DURATION_SEC) ->
              "-c:a", "libopus", "-b:a", "64k", pattern],
             capture_output=True, timeout=300, check=True,
         )
-    except (subprocess.CalledProcessError, FileNotFoundError):
+    except FileNotFoundError:
+        print("⚠️ ffmpeg не установлен — длинное аудио не будет разбито на чанки. Установите: apt install ffmpeg", file=sys.stderr)
+        return [file_path]
+    except subprocess.CalledProcessError:
         return [file_path]
 
     chunks = sorted(Path(tmpdir).glob(f"chunk_*{ext}"))

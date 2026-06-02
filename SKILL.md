@@ -269,15 +269,6 @@ Telegram голосовые сообщения требуют `.ogg` (Opus). И�
 ### credentials.json — два имени ключа
 Скрипты проверяют оба имени: `yandex_speechkit_api_key` и `yandex_api_key`. В документации AI Studio ключ называется `YANDEX_API_KEY`, но в инструкциях установки скилла используется `yandex_speechkit_api_key`. Оба работают. Приоритет: env var → credentials.json рядом со скриптом → Hermes home → OpenClaw home.
 
-### Проверка через лог-файл
-Hermes не пишет в логи какой STT провайдер обработал голосовое. Добавить в `stt.py` блок логирования в `/tmp/yandex-stt.log` — единственный способ убедиться что Yandex STT вызывается, а не Whisper.
-
-## Цены (ориентировочно)ча
-Скрипты проверяют оба имени: `yandex_speechkit_api_key` и `yandex_api_key`. В документации AI Studio ключ называется `YANDEX_API_KEY`, но в инструкциях установки скилла используется `yandex_speechkit_api_key`. Оба работают. Приоритет: env var → credentials.json рядом со скриптом → Hermes home → OpenClaw home.
-
-### Проверка через лог-файл
-Hermes не пишет в логи какой STT провайдер обработал голосовое. Добавить в `stt.py` блок логирования в `/tmp/yandex-stt.log` — единственный способ убедиться что Yandex STT вызывается, а не Whisper.
-
 ## Цены (ориентировочно)
 
 - TTS: ~0.5–1.5 ₽ за 1000 символов
@@ -348,7 +339,7 @@ hermes gateway restart
 
 ```bash
 # Должен вывести только текст (диагностика идёт в stderr)
-python3 /root/.hermes/skills/yandex-speechkit/scripts/stt.py /path/to/audio.ogg --lang ru-RU 2>/dev/null
+python3 /root/.hermes/skills/yandex-speechkit/scripts/stt.py /path/to/audio.ogg --lang ru-RU
 ```
 
 ### Возврат на Whisper
