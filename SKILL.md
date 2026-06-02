@@ -1,7 +1,7 @@
 ---
 name: yandex-speechkit
 description: "Yandex SpeechKit для Telegram-агентов: голосовые ответы (TTS) и распознавание голосовых сообщений (STT). Чистый скилл, никакой телефонии."
-version: 2.1
+version: 3.0
 triggers:
   - yandex
   - speechkit
@@ -67,14 +67,14 @@ echo '{"yandex_speechkit_api_key": "ваш-ключ"}' > ~/.hermes/profiles/ВА
 ### 5. Проверить TTS
 ```bash
 cd ~/.hermes/profiles/ВАШ-ПРОФИЛЬ/skills/yandex-speechkit
-python3 scripts/tts.py "Привет! Я готов к голосовому общению" --voice alena
+python3 scripts/tts.py "Привет! Я готов к голосовому общению"
 ```
 → Создаст `.ogg` файл в папке `audio/`
 → Выведет `MEDIA:/полный/путь/к/audio.ogg`
 
 ### 6. Проверить STT
 ```bash
-python3 scripts/stt.py audio/tts_alena_Привет.*.ogg
+python3 scripts/stt.py audio/tts_oksana_Привет.*.ogg
 ```
 → Выведет распознанный текст
 
@@ -97,7 +97,7 @@ python3 scripts/stt.py audio/tts_alena_Привет.*.ogg
 ```
 Ответ на вопрос...
 
-MEDIA:/root/.hermes/profiles/профиль/skills/yandex-speechkit/audio/tts_alena_Ответ.ogg
+MEDIA:/root/.hermes/profiles/профиль/skills/yandex-speechkit/audio/tts_oksana_Ответ.ogg
 ```
 
 ### Когда отвечать голосом?
@@ -112,15 +112,77 @@ Hermes gateway **автоматически** транскрибирует вх�
 
 **Не нужно** вручную искать аудиофайлы и прогонять через `stt.py` — это только для тестов.
 
+## API Reference (из официальной документации)
+
+### TTS API
+
+- **URL**: `https://tts.api.cloud.yandex.net/speech/v1/tts:synthesize`
+- **Method**: POST с `application/x-www-form-urlencoded` (НЕ JSON!)
+- **Лимит текста**: **5000 символов** за один запрос
+- **Голос по умолчанию**: `oksana`
+- **Формат по умолчанию**: `oggopus`
+- **Языки**: `ru-RU` (default), `en-US`, `tr-TR`
+
+**Голоса:**
+- `oksana` — Женский (по умолчанию)
+- `alena` — Женский
+- `filipp` — Мужской
+- `ermil` — Мужской
+- `jane` — Женский
+- `omazh` — Женский
+- `zahar` — Мужской
+- `marina` — Премиум
+- `masha` — Премиум
+- `tatyana` — Премиум
+
+**Параметры:**
+- `speed`: 0.1–3.0 (default 1.0)
+- `sampleRateHertz`: 48000 (default), 16000, 8000
+- `format`: `oggopus` (default) или `lpcm`
+- `ssml`: SSML-разметка (альтернатива `text`)
+- `lang`: язык
+
+**SSML-фичи:**
+- Ударение: `+` перед ударной гласной (напр. `contr+ol`)
+- Пауза: `-` между словами
+
+### STT API
+
+- **URL**: `https://stt.api.cloud.yandex.net/speech/v1/stt:recognize`
+- **Method**: POST с raw audio body, параметры в query string
+- **Лимиты**: 1 MB, 30 секунд, 1 канал
+- **Языки**: `ru-RU` (default), `en-US`, `tr-TR`
+- **Формат**: `oggopus` (default) или `lpcm`
+- **Доп. параметры**: `topic` (general default), `profanityFilter`, `sampleRateHertz`
+
+**Для длинного аудио (>30 сек):**
+Асинхронный API: `https://transcribe.api.cloud.yandex.net/speech/stt/v2/longRunningRecognize`
+(Скрипт stt.py автоматически разбивает на чанки по 25 сек через ffmpeg.)
+
+### Авторизация
+
+**Метод 1: AI Studio API-ключ (рекомендуется)**
+- Заголовок: `Api-Key: ваш-ключ`
+- Не требует обмена токенов
+- Получить: https://aistudio.yandex.ru/ → Профиль → API-ключи
+
+**Метод 2: IAM-токен (для service account)**
+- Получить JWT → обменять на IAM-токен → `Authorization: Bearer <token>`
+- Endpoint: `https://iam.api.cloud.yandex.net/iam/v1/tokens`
+- Токен живёт 12 часов
+
+Скрипты используют **Метод 1** (Api-Key) — достаточно для AI Studio ключей.
+
 ## Скрипты
 
 ### tts.py — текст → аудио
 ```bash
-python3 scripts/tts.py "Текст для озвучки" [--voice alena] [--emotion good] [--audio-dir /path]
+python3 scripts/tts.py "Текст для озвучки" [--voice oksana] [--format oggopus] [--speed 1.0] [--audio-dir /path]
 ```
 - Создаёт `.ogg` файл в `audio/`
 - Возвращает путь к файлу в stdout (строка `MEDIA:...`)
-- Автоматически разбивает текст > 250 символов на части и склеивает
+- Автоматически разбивает текст > 5000 символов на части и склеивает
+- Retry: 3 попытки с exponential backoff на 429/5xx
 
 ### stt.py — аудио → текст
 ```bash
@@ -134,25 +196,10 @@ python3 scripts/stt.py path/to/audio.ogg [--lang ru-RU] [--format oggopus] [--ra
 
 ### kiri_voice.py — обёртка для Hermes
 ```bash
-python3 scripts/kiri_voice.py "Текст ответа" [--voice alena] [--emotion good]
+python3 scripts/kiri_voice.py "Текст ответа" [--voice oksana] [--format oggopus]
 ```
 - Генерирует аудио и возвращает готовый `MEDIA:...` путь
 - Удобно для вставки в ответ агента
-
-## Голоса
-
-- `alena` — Женский, нейтральный ✅ (по умолчанию)
-- `filipp` — Мужской, нейтральный
-- `ermil` — Мужской, добрый
-- `jane` — Женский, грустный
-- `oksana` — Женский, новостной
-- `omazh` — Женский, злой
-- `zahar` — Мужской, нейтральный
-- `marina` — Женский, шёпот (премиум)
-- `masha` — Женский, детский (премиум)
-- `tatyana` — Женский, для Brand Voice
-
-Эмоции: `neutral`, `good`, `evil` (параметр `--emotion`)
 
 ## PITFALLS
 
@@ -165,12 +212,15 @@ Yandex TTS v1 **не принимает JSON**. Ошибка «unsupported conte
 ### send_message = дубликаты
 Если вставить `MEDIA:` в обычный ответ — gateway доставит одно сообщение. Если вызвать `send_message` отдельно — будут два сообщения. Всегда вставлять `MEDIA:` в ответ агента.
 
-### Лимит символов TTS
-Максимум **250 символов** за один запрос к TTS API. Скрипт `tts.py` автоматически разбивает длинные тексты на части и склеивает аудио. Но лучше держать ответы компактными — длинные голосовые неудобно слушать.
+### Лимит символов TTS: 5000
+Максимум **5000 символов** за один запрос к TTS API. Скрипт `tts.py` автоматически разбивает длинные тексты на части и склеивает аудио. Но лучше держать ответы компактными — длинные голосовые неудобно слушать.
+
+### Формат по умолчанию: oggopus
+Telegram голосовые сообщения требуют `.ogg` (Opus). Используйте `--format oggopus` (по умолчанию).
 
 ### credentials.json — поиск ключа
 Скрипты ищут ключ в порядке приоритета:
-1. `YANDEX_SPEECHKIT_API_KEY` (переменная окружения)
+1. `YANDEX_API_KEY` (переменная окружения)
 2. `credentials.json` рядом с SKILL.md (директория проекта)
 3. `credentials.json` в workspace текущего Hermes-профиля (`$HERMES_HOME/credentials.json`)
 
@@ -179,6 +229,9 @@ Yandex TTS v1 **не принимает JSON**. Ошибка «unsupported conte
 
 ### Зависимости
 Нужен `requests`: `pip install requests`. Обычно уже стоит, но если нет — скрипт упадёт с `ModuleNotFoundError`.
+
+### FFmpeg для STT
+Для распознавания длинных аудио (>25 сек) нужен `ffmpeg` и `ffprobe`. Установка: `apt install ffmpeg` или `brew install ffmpeg`.
 
 ## Цены (ориентировочно)
 
@@ -194,8 +247,8 @@ yandex-speechkit/
 ├── SKILL.md           ← этот файл
 ├── credentials.json   ← API-ключ (создать вручную)
 ├── scripts/
-│   ├── tts.py         ← текст → аудио (с автобreak > 250 символов)
-│   ├── stt.py         ← аудио → текст
+│   ├── tts.py         ← текст → аудио (автобreak >5000 символов)
+│   ├── stt.py         ← аудио → текст (автобreak >25 сек)
 │   └── kiri_voice.py  ← обёртка MEDIA: для Hermes
 ├── references/
 │   └── review-findings.md ← история ревью, найденные баги, почему так сделано

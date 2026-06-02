@@ -5,9 +5,20 @@ Yandex SpeechKit STT — распознавание речи (аудио → т�
 Использование:
     python3 stt.py audio.ogg
     python3 stt.py audio.ogg --lang ru-RU
+    python3 stt.py audio.ogg --format oggopus --rate 48000
 
 Требуется API-ключ:
-    YANDEX_SPEECHKIT_API_KEY или credentials.json
+    YANDEX_API_KEY или credentials.json
+
+API Reference (официальная документация):
+    URL: https://stt.api.cloud.yandex.net/speech/v1/stt:recognize
+    Method: POST с raw audio body, параметры в query string
+    Лимиты: 1 MB, 30 секунд, 1 канал
+    Формат по умолчанию: oggopus
+    Язык по умолчанию: ru-RU
+
+Для длинного аудио (>30 сек):
+    Скрипт автоматически разбивает на чанки через ffmpeg.
 """
 
 import argparse
@@ -19,6 +30,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
+from typing import List, Optional, Tuple
 
 import requests
 
@@ -33,7 +45,7 @@ MAX_CHUNK_DURATION_SEC = 25
 MAX_CHUNK_SIZE_BYTES = 900_000
 
 
-def get_audio_info(file_path: str) -> tuple:
+def get_audio_info(file_path: str) -> Tuple[float, int]:
     """Получить длительность (сек) и sample rate через ffprobe."""
     try:
         result = subprocess.run(
@@ -55,7 +67,7 @@ def get_audio_info(file_path: str) -> tuple:
         return 0, 48000
 
 
-def split_audio(file_path: str, chunk_duration: int = MAX_CHUNK_DURATION_SEC) -> list:
+def split_audio(file_path: str, chunk_duration: int = MAX_CHUNK_DURATION_SEC) -> List[str]:
     """Разбить аудио на чанки через ffmpeg. Возвращает список путей."""
     tmpdir = tempfile.mkdtemp(prefix="stt_chunks_")
     ext = Path(file_path).suffix or ".ogg"
@@ -77,7 +89,7 @@ def split_audio(file_path: str, chunk_duration: int = MAX_CHUNK_DURATION_SEC) ->
 
 def get_api_key() -> str:
     """Получить API-ключ из разных источников."""
-    key = os.environ.get("YANDEX_SPEECHKIT_API_KEY")
+    key = os.environ.get("YANDEX_API_KEY") or os.environ.get("YANDEX_SPEECHKIT_API_KEY")
     if key:
         return key
 
@@ -107,13 +119,13 @@ def get_api_key() -> str:
         except (json.JSONDecodeError, IOError):
             pass
 
-    print("❌ API-ключ не найден. Укажите YANDEX_SPEECHKIT_API_KEY или добавьте в credentials.json")
+    print("❌ API-ключ не найден. Укажите YANDEX_API_KEY или добавьте в credentials.json")
     print("   Получить ключ: https://aistudio.yandex.ru/ → Профиль → API-ключи")
     sys.exit(1)
 
 
-def recognize(file_path: str, lang: str = "ru-RU", sample_rate: int = None,
-              audio_format: str = None) -> str:
+def recognize(file_path: str, lang: str = "ru-RU", sample_rate: Optional[int] = None,
+              audio_format: Optional[str] = None, topic: Optional[str] = None) -> str:
     """
     Распознать речь из аудиофайла.
     Автоматически разбивает длинные файлы через ffmpeg.
@@ -131,8 +143,8 @@ def recognize(file_path: str, lang: str = "ru-RU", sample_rate: int = None,
     ext = file_path.suffix.lower()
     fmt_map = {
         ".ogg": "oggopus", ".opus": "oggopus",
-        ".wav": "lpcm", ".mp3": "mp3",
-        ".flac": "flac", ".m4a": "m4a",
+        ".wav": "lpcm", ".mp3": "lpcm",
+        ".flac": "lpcm", ".m4a": "lpcm",
     }
     if audio_format is None:
         audio_format = fmt_map.get(ext, "oggopus")
@@ -164,8 +176,15 @@ def recognize(file_path: str, lang: str = "ru-RU", sample_rate: int = None,
         with open(chunk, "rb") as f:
             audio_data = f.read()
 
+        # Auth: Api-Key header (для AI Studio ключей — напрямую)
         headers = {"Authorization": f"Api-Key {api_key}"}
-        params = {"lang": lang, "format": audio_format, "sampleRateHertz": sample_rate}
+        params = {
+            "lang": lang,
+            "format": audio_format,
+            "sampleRateHertz": sample_rate,
+        }
+        if topic:
+            params["topic"] = topic
 
         last_err = None
         for attempt in range(3):
@@ -180,7 +199,9 @@ def recognize(file_path: str, lang: str = "ru-RU", sample_rate: int = None,
             last_err = f"HTTP {resp.status_code}: {resp.text[:300]}"
             if resp.status_code == 429 or resp.status_code >= 500:
                 if attempt < 2:
-                    time.sleep(2 * (2 ** attempt))
+                    delay = 2 * (2 ** attempt)
+                    print(f"⚠️ Retry {attempt + 1}/3 after {delay}s: {last_err}")
+                    time.sleep(delay)
                     continue
             print(f"❌ Ошибка API: {last_err}")
             break
@@ -204,9 +225,14 @@ def recognize(file_path: str, lang: str = "ru-RU", sample_rate: int = None,
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Yandex SpeechKit STT")
     parser.add_argument("file", help="Аудиофайл для распознавания")
-    parser.add_argument("--lang", default="ru-RU", help="Язык (по умолчанию: ru-RU)")
-    parser.add_argument("--format", help="Формат аудио (oggopus, lpcm, mp3)")
-    parser.add_argument("--rate", type=int, help="Частота дискретизации (Hz)")
+    parser.add_argument("--lang", default="ru-RU",
+                        help="Язык (по умолчанию: ru-RU)")
+    parser.add_argument("--format", choices=["oggopus", "lpcm"],
+                        help="Формат аудио (oggopus, lpcm)")
+    parser.add_argument("--rate", type=int,
+                        help="Частота дискретизации (Hz)")
+    parser.add_argument("--topic", default=None,
+                        help="Тема (general, dates, names, geo, etc.)")
 
     args = parser.parse_args()
 
@@ -215,4 +241,5 @@ if __name__ == "__main__":
         lang=args.lang,
         sample_rate=args.rate,
         audio_format=args.format,
+        topic=args.topic,
     )

@@ -4,14 +4,21 @@ Yandex SpeechKit TTS — синтез речи (текст → аудио)
 
 Использование:
     python3 tts.py "Привет, это тестовый синтез речи"
-    python3 tts.py "Привет" --voice alena --emotion good --format oggopus
+    python3 tts.py "Привет" --voice oksana --format oggopus
     python3 tts.py "Привет" --output /path/to/audio.ogg
 
 Требуется API-ключ Yandex Cloud / AI Studio.
 Источники ключа (по приоритету):
-    1. Переменная окружения YANDEX_SPEECHKIT_API_KEY
+    1. Переменная окружения YANDEX_API_KEY
     2. Файл credentials.json в директории проекта (рядом с SKILL.md)
     3. Файл credentials.json в workspace текущего Hermes-профиля
+
+API Reference (официальная документация):
+    URL: https://tts.api.cloud.yandex.net/speech/v1/tts:synthesize
+    Method: POST с form-data (НЕ JSON!)
+    Лимит: 5000 символов за запрос
+    Голос по умолчанию: oksana
+    Формат по умолчанию: oggopus
 """
 
 import argparse
@@ -21,7 +28,7 @@ import re
 import sys
 import time
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 import requests
 
@@ -34,31 +41,30 @@ DEFAULT_AUDIO_DIR = PROJECT_DIR / "audio"
 
 TTS_URL = "https://tts.api.cloud.yandex.net/speech/v1/tts:synthesize"
 
-# Максимум символов за один запрос к Yandex TTS
-MAX_CHARS = 250
+# Максимум символов за один запрос к Yandex TTS (из официальной документации)
+MAX_CHARS = 5000
 
 # Доступные голоса: https://yandex.cloud/ru/docs/speechkit/tts/voices
 VOICES = [
-    "alena",     # женский, нейтральный (по умолчанию)
+    "oksana",    # женский (по умолчанию)
+    "alena",     # женский
     "filipp",    # мужской
-    "ermil",     # мужской, добрый
-    "jane",      # женский, грустный
-    "oksana",    # женский, новостной
-    "omazh",     # женский, злой
-    "zahar",     # мужской, нейтральный
-    "marina",    # женский, шёпот (премиум)
-    "masha",     # женский, детский (премиум)
-    "tatyana",   # женский, для Brand Voice
+    "ermil",     # мужской
+    "jane",      # женский
+    "omazh",     # женский
+    "zahar",     # мужской
+    "marina",    # премиум
+    "masha",     # премиум
+    "tatyana",   # премиум
 ]
 
-EMOTIONS = ["neutral", "good", "evil"]
-FORMATS = ["oggopus", "lpcm", "mp3"]
+FORMATS = ["oggopus", "lpcm"]
 
 
 def get_api_key() -> str:
     """Получить API-ключ из разных источников."""
     # 1. Переменная окружения
-    key = os.environ.get("YANDEX_SPEECHKIT_API_KEY")
+    key = os.environ.get("YANDEX_API_KEY") or os.environ.get("YANDEX_SPEECHKIT_API_KEY")
     if key:
         return key
 
@@ -89,12 +95,12 @@ def get_api_key() -> str:
         except (json.JSONDecodeError, IOError):
             pass
 
-    print("❌ API-ключ не найден. Укажите YANDEX_SPEECHKIT_API_KEY или добавьте в credentials.json")
+    print("❌ API-ключ не найден. Укажите YANDEX_API_KEY или добавьте в credentials.json")
     print("   Получить ключ: https://aistudio.yandex.ru/ → Профиль → API-ключи")
     sys.exit(1)
 
 
-def _split_text(text: str, max_len: int = MAX_CHARS) -> list[str]:
+def _split_text(text: str, max_len: int = MAX_CHARS) -> List[str]:
     """Разбить текст на части не более max_len символов, по границам предложений/слов."""
     if len(text) <= max_len:
         return [text]
@@ -123,13 +129,13 @@ def _split_text(text: str, max_len: int = MAX_CHARS) -> list[str]:
     return parts
 
 
-def synthesize(text: str, voice: str = "alena", emotion: str = "neutral",
+def synthesize(text: str, voice: str = "oksana",
                speed: float = 1.0, audio_format: str = "oggopus",
-               lang: str = "ru-RU", output: str = None,
-               audio_dir: Path = None) -> Path:
+               lang: str = "ru-RU", output: Optional[str] = None,
+               audio_dir: Optional[Path] = None) -> Path:
     """
     Синтезировать речь из текста.
-    Если текст длиннее 250 символов — разбивает на части и склеивает.
+    Если текст длиннее 5000 символов — разбивает на части и склеивает.
 
     Возвращает путь к аудиофайлу.
     """
@@ -138,12 +144,13 @@ def synthesize(text: str, voice: str = "alena", emotion: str = "neutral",
     audio_dir = audio_dir or DEFAULT_AUDIO_DIR
     audio_dir.mkdir(parents=True, exist_ok=True)
 
+    # Auth: Api-Key header (для AI Studio ключей — напрямую, без IAM-токена)
     headers = {
         "Authorization": f"Api-Key {api_key}",
     }
 
     # Определяем расширение
-    ext_map = {"oggopus": "ogg", "lpcm": "wav", "mp3": "mp3"}
+    ext_map = {"oggopus": "ogg", "lpcm": "pcm"}
     ext = ext_map.get(audio_format, "ogg")
 
     # Разбиваем длинный текст на части
@@ -171,13 +178,13 @@ def synthesize(text: str, voice: str = "alena", emotion: str = "neutral",
         else:
             print(f"🎙️ Синтезирую: «{part[:80]}{'...' if len(part) > 80 else ''}»")
 
-        print(f"   Голос: {voice}, эмоция: {emotion}, скорость: {speed}x")
+        print(f"   Голос: {voice}, скорость: {speed}x, формат: {audio_format}")
 
+        # POST form-data (НЕ JSON!)
         params = {
             "text": part,
             "voice": voice,
-            "emotion": emotion,
-            "speed": speed,
+            "speed": str(speed),
             "format": audio_format,
             "lang": lang,
         }
@@ -191,7 +198,9 @@ def synthesize(text: str, voice: str = "alena", emotion: str = "neutral",
             last_err = f"HTTP {resp.status_code}: {resp.text[:300]}"
             if resp.status_code == 429 or resp.status_code >= 500:
                 if attempt < 2:
-                    time.sleep(2 * (2 ** attempt))
+                    delay = 2 * (2 ** attempt)
+                    print(f"⚠️ Retry {attempt + 1}/3 after {delay}s: {last_err}")
+                    time.sleep(delay)
                     continue
             print(f"❌ Ошибка API: {last_err}")
             sys.exit(1)
@@ -217,19 +226,26 @@ def list_voices():
     """Вывести список доступных голосов."""
     print("Доступные голоса:")
     for v in VOICES:
-        print(f"  • {v}")
+        default = " (по умолчанию)" if v == "oksana" else ""
+        print(f"  • {v}{default}")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Yandex SpeechKit TTS")
-    parser.add_argument("text", nargs="?", help="Текст для озвучки")
-    parser.add_argument("--voice", default="alena", choices=VOICES, help="Голос (по умолчанию: alena)")
-    parser.add_argument("--emotion", default="neutral", choices=EMOTIONS, help="Эмоция")
-    parser.add_argument("--speed", type=float, default=1.0, help="Скорость речи (0.1–3.0)")
-    parser.add_argument("--format", default="oggopus", choices=FORMATS, help="Формат аудио")
+    parser.add_argument("text", nargs="?", help="Текст для озвучки (до 5000 символов)")
+    parser.add_argument("--voice", default="oksana", choices=VOICES,
+                        help="Голос (по умолчанию: oksana)")
+    parser.add_argument("--speed", type=float, default=1.0,
+                        help="Скорость речи (0.1–3.0)")
+    parser.add_argument("--format", default="oggopus", choices=FORMATS,
+                        help="Формат аудио (по умолчанию: oggopus)")
+    parser.add_argument("--lang", default="ru-RU",
+                        help="Язык (по умолчанию: ru-RU)")
     parser.add_argument("--output", "-o", help="Путь для сохранения")
-    parser.add_argument("--audio-dir", help="Директория для аудио (по умолчанию: audio/ рядом со скриптом)")
-    parser.add_argument("--list-voices", action="store_true", help="Показать список голосов")
+    parser.add_argument("--audio-dir",
+                        help="Директория для аудио (по умолчанию: audio/ рядом со скриптом)")
+    parser.add_argument("--list-voices", action="store_true",
+                        help="Показать список голосов")
 
     args = parser.parse_args()
 
@@ -239,9 +255,9 @@ if __name__ == "__main__":
         output_path = synthesize(
             text=args.text,
             voice=args.voice,
-            emotion=args.emotion,
             speed=args.speed,
             audio_format=args.format,
+            lang=args.lang,
             output=args.output,
             audio_dir=Path(args.audio_dir) if args.audio_dir else None,
         )

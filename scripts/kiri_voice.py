@@ -8,24 +8,22 @@
     → выводит MEDIA:/path/to/file.ogg
 
 Настройки по умолчанию:
-    - Голос: alena (женский, нейтральный)
-    - Эмоция: good (доброжелательная)
+    - Голос: oksana (женский, по умолчанию API)
     - Формат: oggopus (для Telegram)
+    - Скорость: 1.0
 """
 
 import subprocess
 import sys
 from pathlib import Path
+from typing import Optional
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 TTS_SCRIPT = SCRIPT_DIR / "tts.py"
 
 
-from typing import Optional
-
-
-def voice_reply(text: str, voice: str = "alena", emotion: str = "good",
-                audio_dir: Optional[str] = None) -> Optional[str]:
+def voice_reply(text: str, voice: str = "oksana",
+                speed: float = 1.0, audio_dir: Optional[str] = None) -> Optional[str]:
     """
     Озвучить текст и вернуть MEDIA: путь для Telegram.
     Возвращает None если TTS недоступен.
@@ -34,14 +32,13 @@ def voice_reply(text: str, voice: str = "alena", emotion: str = "good",
         sys.executable, str(TTS_SCRIPT),
         text,
         "--voice", voice,
-        "--emotion", emotion,
-        "--speed", "1.0",
+        "--speed", str(speed),
     ]
 
     if audio_dir:
         cmd.extend(["--audio-dir", audio_dir])
 
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
 
     if result.returncode != 0:
         print(f"⚠️ Yandex TTS error: {result.stderr[:200]}", file=sys.stderr)
@@ -65,12 +62,29 @@ def voice_reply(text: str, voice: str = "alena", emotion: str = "good",
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Usage: python3 kiri_voice.py <текст>", file=sys.stderr)
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Yandex SpeechKit voice reply (Hermes wrapper)")
+    parser.add_argument("text", nargs="?", help="Текст для озвучки")
+    parser.add_argument("--voice", default="oksana",
+                        help="Голос (по умолчанию: oksana)")
+    parser.add_argument("--speed", type=float, default=1.0,
+                        help="Скорость речи (0.1–3.0)")
+    parser.add_argument("--audio-dir",
+                        help="Директория для аудио")
+
+    args = parser.parse_args()
+
+    if not args.text:
+        parser.print_help()
         sys.exit(1)
 
-    text = " ".join(sys.argv[1:])
-    result = voice_reply(text)
+    result = voice_reply(
+        text=args.text,
+        voice=args.voice,
+        speed=args.speed,
+        audio_dir=args.audio_dir,
+    )
 
     if result:
         print(result)
