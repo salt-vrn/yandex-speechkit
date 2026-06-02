@@ -1,7 +1,7 @@
 ---
 name: yandex-speechkit
 description: "Yandex SpeechKit для Telegram-агентов: голосовые ответы (TTS) и распознавание голосовых сообщений (STT). Чистый скилл, никакой телефонии."
-version: 3.2
+version: 3.3
 triggers:
   - yandex
   - speechkit
@@ -277,6 +277,63 @@ yandex-speechkit/
 ├── references/
 │   └── review-findings.md ← история ревью, найденные баги, почему так сделано
 └── audio/             ← сгенерированные .ogg файлы
+```
+
+## Настройка STT через Yandex в Hermes
+
+По умолчанию Hermes использует Whisper (local/Groq/OpenAI) для распознавания голосовых сообщений. Yandex SpeechKit лучше подходит для русского языка.
+
+### Как это работает
+
+Hermes поддерживает **command-type STT providers** — кастомные shell-команды как бэкенд для распознавания. Скрипт `stt.py` вызывается как внешняя команда, получает путь к аудиофайлу и печатает распознанный текст в stdout.
+
+### Настройка
+
+1. Убедиться что API-ключ есть в `~/.hermes/.env`:
+```bash
+echo "YANDEX_API_KEY=ваш-ключ" >> ~/.hermes/.env
+```
+
+2. Добавить Yandex как command STT provider:
+```bash
+hermes config set stt.providers.yandex.type command
+hermes config set stt.providers.yandex.command 'python3 /root/.hermes/skills/yandex-speechkit/scripts/stt.py {input_path} --lang {language}'
+hermes config set stt.providers.yandex.language ru-RU
+hermes config set stt.providers.yandex.format txt
+hermes config set stt.providers.yandex.timeout 120
+```
+
+3. Переключить STT на Yandex:
+```bash
+hermes config set stt.provider yandex
+```
+
+4. Перезапустить gateway:
+```bash
+hermes gateway restart
+```
+
+### Плейсхолдеры команды
+
+| Плейсхолдер | Значение |
+|-------------|----------|
+| `{input_path}` | Путь к аудиофайлу |
+| `{output_path}` | Путь для записи результата (не используется — stdout) |
+| `{language}` | Код языка (из config, по умолчанию `ru-RU`) |
+| `{model}` | Модель (не используется Yandex) |
+
+### Проверка
+
+```bash
+# Должен вывести только текст (диагностика идёт в stderr)
+python3 /root/.hermes/skills/yandex-speechkit/scripts/stt.py /path/to/audio.ogg --lang ru-RU 2>/dev/null
+```
+
+### Возврат на Whisper
+
+```bash
+hermes config set stt.provider local
+hermes gateway restart
 ```
 
 ## Установка на OpenClaw

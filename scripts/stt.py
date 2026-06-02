@@ -126,8 +126,8 @@ def get_api_key() -> str:
         except (json.JSONDecodeError, IOError):
             pass
 
-    print("❌ API-ключ не найден. Укажите YANDEX_API_KEY или добавьте в credentials.json")
-    print("   Получить ключ: https://aistudio.yandex.ru/ → Профиль → API-ключи")
+    print("❌ API-ключ не найден. Укажите YANDEX_API_KEY или добавьте в credentials.json", file=sys.stderr)
+    print("   Получить ключ: https://aistudio.yandex.ru/ → Профиль → API-ключи", file=sys.stderr)
     sys.exit(1)
 
 
@@ -143,7 +143,7 @@ def recognize(file_path: str, lang: str = "ru-RU", sample_rate: Optional[int] = 
     file_path = Path(file_path)
 
     if not file_path.exists():
-        print(f"❌ Файл не найден: {file_path}")
+        print(f"❌ Файл не найден: {file_path}", file=sys.stderr)
         sys.exit(1)
 
     # Определить формат по расширению
@@ -162,15 +162,15 @@ def recognize(file_path: str, lang: str = "ru-RU", sample_rate: Optional[int] = 
         sample_rate = detected_rate
 
     size_mb = file_path.stat().st_size / (1024 * 1024)
-    print(f"🎤 Распознаю: {file_path.name} ({size_mb:.1f} MB, {duration:.1f}s)")
-    print(f"   Формат: {audio_format}, частота: {sample_rate} Hz, язык: {lang}")
+    print(f"🎤 Распознаю: {file_path.name} ({size_mb:.1f} MB, {duration:.1f}s)", file=sys.stderr)
+    print(f"   Формат: {audio_format}, частота: {sample_rate} Hz, язык: {lang}", file=sys.stderr)
 
     # Разбивка если нужно
     needs_split = (size_mb > MAX_CHUNK_SIZE_BYTES / (1024 * 1024)) or \
                   (duration > MAX_CHUNK_DURATION_SEC)
     if needs_split:
         n_chunks = max(2, math.ceil(duration / MAX_CHUNK_DURATION_SEC))
-        print(f"📎 Длинное аудио → разбиваю на ~{n_chunks} чанков")
+        print(f"📎 Длинное аудио → разбиваю на ~{n_chunks} чанков", file=sys.stderr)
         chunks = split_audio(str(file_path))
     else:
         chunks = [str(file_path)]
@@ -178,7 +178,7 @@ def recognize(file_path: str, lang: str = "ru-RU", sample_rate: Optional[int] = 
     texts = []
     for i, chunk in enumerate(chunks, 1):
         if len(chunks) > 1:
-            print(f"  Чанк {i}/{len(chunks)}...")
+            print(f"  Чанк {i}/{len(chunks)}...", file=sys.stderr)
 
         with open(chunk, "rb") as f:
             audio_data = f.read()
@@ -207,13 +207,13 @@ def recognize(file_path: str, lang: str = "ru-RU", sample_rate: Optional[int] = 
             if resp.status_code == 429 or resp.status_code >= 500:
                 if attempt < 2:
                     delay = 2 * (2 ** attempt)
-                    print(f"⚠️ Retry {attempt + 1}/3 after {delay}s: {last_err}")
+                    print(f"⚠️ Retry {attempt + 1}/3 after {delay}s: {last_err}", file=sys.stderr)
                     time.sleep(delay)
                     continue
-            print(f"❌ Ошибка API: {last_err}")
+            print(f"❌ Ошибка API: {last_err}", file=sys.stderr)
             break
         else:
-            print(f"❌ Ошибка API после 3 попыток: {last_err}")
+            print(f"❌ Ошибка API после 3 попыток: {last_err}", file=sys.stderr)
 
     # Cleanup temp chunks
     if len(chunks) > 1 and chunks[0] != str(file_path):
@@ -222,9 +222,9 @@ def recognize(file_path: str, lang: str = "ru-RU", sample_rate: Optional[int] = 
 
     full_text = " ".join(texts)
     if full_text:
-        print(f"✅ Распознано: «{full_text}»")
+        print(f"✅ Распознано: «{full_text}»", file=sys.stderr)
     else:
-        print("⚠️ Текст не распознан")
+        print("⚠️ Текст не распознан", file=sys.stderr)
 
     return full_text
 
@@ -243,10 +243,13 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    recognize(
+    result = recognize(
         file_path=args.file,
         lang=args.lang,
         sample_rate=args.rate,
         audio_format=args.format,
         topic=args.topic,
     )
+    # Print transcript to stdout (diagnostics go to stderr)
+    if result:
+        print(result)
