@@ -19,7 +19,9 @@ import json
 import os
 import re
 import sys
+import time
 from pathlib import Path
+from typing import Optional
 
 import requests
 
@@ -180,11 +182,21 @@ def synthesize(text: str, voice: str = "alena", emotion: str = "neutral",
             "lang": lang,
         }
 
-        resp = requests.post(TTS_URL, headers=headers, data=params, timeout=30)
+        last_err = None
+        for attempt in range(3):
+            resp = requests.post(TTS_URL, headers=headers, data=params, timeout=30)
 
-        if resp.status_code != 200:
-            print(f"❌ Ошибка API: {resp.status_code}")
-            print(f"   {resp.text[:500]}")
+            if resp.status_code == 200:
+                break
+            last_err = f"HTTP {resp.status_code}: {resp.text[:300]}"
+            if resp.status_code == 429 or resp.status_code >= 500:
+                if attempt < 2:
+                    time.sleep(2 * (2 ** attempt))
+                    continue
+            print(f"❌ Ошибка API: {last_err}")
+            sys.exit(1)
+        else:
+            print(f"❌ Ошибка API после 3 попыток: {last_err}")
             sys.exit(1)
 
         all_audio.extend(resp.content)

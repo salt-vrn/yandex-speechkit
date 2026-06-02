@@ -21,8 +21,11 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 TTS_SCRIPT = SCRIPT_DIR / "tts.py"
 
 
-def voice_reply(text: str, voice: str = "filipp", emotion: str = "good",
-                audio_dir: str = None) -> str | None:
+from typing import Optional
+
+
+def voice_reply(text: str, voice: str = "alena", emotion: str = "good",
+                audio_dir: Optional[str] = None) -> Optional[str]:
     """
     Озвучить текст и вернуть MEDIA: путь для Telegram.
     Возвращает None если TTS недоступен.

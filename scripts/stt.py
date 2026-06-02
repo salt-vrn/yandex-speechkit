@@ -12,8 +12,12 @@ Yandex SpeechKit STT — распознавание речи (аудио → т�
 
 import argparse
 import json
+import math
 import os
+import subprocess
 import sys
+import tempfile
+import time
 from pathlib import Path
 
 import requests
@@ -23,6 +27,52 @@ PROJECT_DIR = SCRIPT_DIR.parent
 
 # STT API (синхронное распознавание, до ~30 сек / 1 MB)
 STT_URL = "https://stt.api.cloud.yandex.net/speech/v1/stt:recognize"
+
+# Лимиты для chunking
+MAX_CHUNK_DURATION_SEC = 25
+MAX_CHUNK_SIZE_BYTES = 900_000
+
+
+def get_audio_info(file_path: str) -> tuple:
+    """Получить длительность (сек) и sample rate через ffprobe."""
+    try:
+        result = subprocess.run(
+            ["ffprobe", "-v", "quiet",
+             "-show_entries", "format=duration",
+             "-show_entries", "stream=sample_rate",
+             "-of", "json", file_path],
+            capture_output=True, text=True, timeout=30,
+        )
+        info = json.loads(result.stdout)
+        duration = float(info.get("format", {}).get("duration", 0))
+        sample_rate = 48000
+        for s in info.get("streams", []):
+            if "sample_rate" in s:
+                sample_rate = int(s["sample_rate"])
+                break
+        return duration, sample_rate
+    except (FileNotFoundError, subprocess.TimeoutExpired, Exception):
+        return 0, 48000
+
+
+def split_audio(file_path: str, chunk_duration: int = MAX_CHUNK_DURATION_SEC) -> list:
+    """Разбить аудио на чанки через ffmpeg. Возвращает список путей."""
+    tmpdir = tempfile.mkdtemp(prefix="stt_chunks_")
+    ext = Path(file_path).suffix or ".ogg"
+    pattern = os.path.join(tmpdir, f"chunk_%03d{ext}")
+
+    try:
+        subprocess.run(
+            ["ffmpeg", "-y", "-i", file_path,
+             "-f", "segment", "-segment_time", str(chunk_duration),
+             "-c:a", "libopus", "-b:a", "64k", pattern],
+            capture_output=True, timeout=300, check=True,
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return [file_path]
+
+    chunks = sorted(Path(tmpdir).glob(f"chunk_*{ext}"))
+    return [str(c) for c in chunks] if chunks else [file_path]
 
 
 def get_api_key() -> str:
@@ -65,7 +115,8 @@ def get_api_key() -> str:
 def recognize(file_path: str, lang: str = "ru-RU", sample_rate: int = None,
               audio_format: str = None) -> str:
     """
-    Распознать речь из аудиофайла (синхронно, до ~1 MB / 30 сек).
+    Распознать речь из аудиофайла.
+    Автоматически разбивает длинные файлы через ffmpeg.
 
     Возвращает распознанный текст.
     """
@@ -79,64 +130,75 @@ def recognize(file_path: str, lang: str = "ru-RU", sample_rate: int = None,
     # Определить формат по расширению
     ext = file_path.suffix.lower()
     fmt_map = {
-        ".ogg": "oggopus",
-        ".opus": "oggopus",
-        ".wav": "lpcm",
-        ".mp3": "mp3",
-        ".flac": "flac",
-        ".m4a": "m4a",
+        ".ogg": "oggopus", ".opus": "oggopus",
+        ".wav": "lpcm", ".mp3": "mp3",
+        ".flac": "flac", ".m4a": "m4a",
     }
     if audio_format is None:
         audio_format = fmt_map.get(ext, "oggopus")
 
+    # ffprobe для определения длительности и sample rate
+    duration, detected_rate = get_audio_info(str(file_path))
     if sample_rate is None:
-        rate_map = {".ogg": 48000, ".opus": 48000, ".mp3": 44100, ".wav": 16000}
-        sample_rate = rate_map.get(ext, 48000)
+        sample_rate = detected_rate
 
     size_mb = file_path.stat().st_size / (1024 * 1024)
-    print(f"🎤 Распознаю: {file_path.name} ({size_mb:.1f} MB)")
+    print(f"🎤 Распознаю: {file_path.name} ({size_mb:.1f} MB, {duration:.1f}s)")
     print(f"   Формат: {audio_format}, частота: {sample_rate} Hz, язык: {lang}")
 
-    if size_mb > 1.0:
-        print("⚠️ Файл > 1 MB — синхронный API может не справиться.")
-        print("   Попробуйте разбить файл или использовать ffmpeg для сжатия.")
-
-    with open(file_path, "rb") as f:
-        audio_data = f.read()
-
-    headers = {
-        "Authorization": f"Api-Key {api_key}",
-    }
-
-    params = {
-        "lang": lang,
-        "format": audio_format,
-        "sampleRateHertz": sample_rate,
-    }
-
-    resp = requests.post(
-        STT_URL,
-        headers=headers,
-        params=params,
-        data=audio_data,
-        timeout=60,
-    )
-
-    if resp.status_code != 200:
-        print(f"❌ Ошибка API: {resp.status_code}")
-        print(f"   {resp.text[:500]}")
-        sys.exit(1)
-
-    result = resp.json()
-    text = result.get("result", "")
-
-    if text:
-        print(f"✅ Распознано: «{text}»")
+    # Разбивка если нужно
+    needs_split = (size_mb > MAX_CHUNK_SIZE_BYTES / (1024 * 1024)) or \
+                  (duration > MAX_CHUNK_DURATION_SEC)
+    if needs_split:
+        n_chunks = max(2, math.ceil(duration / MAX_CHUNK_DURATION_SEC))
+        print(f"📎 Длинное аудио → разбиваю на ~{n_chunks} чанков")
+        chunks = split_audio(str(file_path))
     else:
-        print("⚠️ Текст не распознан (тишина или шум?)")
-        print(f"   Ответ API: {json.dumps(result, ensure_ascii=False, indent=2)}")
+        chunks = [str(file_path)]
 
-    return text
+    texts = []
+    for i, chunk in enumerate(chunks, 1):
+        if len(chunks) > 1:
+            print(f"  Чанк {i}/{len(chunks)}...")
+
+        with open(chunk, "rb") as f:
+            audio_data = f.read()
+
+        headers = {"Authorization": f"Api-Key {api_key}"}
+        params = {"lang": lang, "format": audio_format, "sampleRateHertz": sample_rate}
+
+        last_err = None
+        for attempt in range(3):
+            resp = requests.post(STT_URL, headers=headers, params=params,
+                                 data=audio_data, timeout=60)
+            if resp.status_code == 200:
+                result = resp.json()
+                text = result.get("result", "")
+                if text:
+                    texts.append(text)
+                break
+            last_err = f"HTTP {resp.status_code}: {resp.text[:300]}"
+            if resp.status_code == 429 or resp.status_code >= 500:
+                if attempt < 2:
+                    time.sleep(2 * (2 ** attempt))
+                    continue
+            print(f"❌ Ошибка API: {last_err}")
+            break
+        else:
+            print(f"❌ Ошибка API после 3 попыток: {last_err}")
+
+    # Cleanup temp chunks
+    if len(chunks) > 1 and chunks[0] != str(file_path):
+        import shutil
+        shutil.rmtree(os.path.dirname(chunks[0]), ignore_errors=True)
+
+    full_text = " ".join(texts)
+    if full_text:
+        print(f"✅ Распознано: «{full_text}»")
+    else:
+        print("⚠️ Текст не распознан")
+
+    return full_text
 
 
 if __name__ == "__main__":

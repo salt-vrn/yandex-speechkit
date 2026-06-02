@@ -17,9 +17,21 @@
 6. **Нет `pip install requests`** — зависимости не указаны. Добавлено в быстрый старт.
 
 ### Minor
-7. **`str | None`** — Python 3.10+ аннотация, не работает на старших версиях. Добавлен pitfall в SKILL.md.
+7. **`str | None`** — Python 3.10+ аннотация. Исправлено на `Optional[str]` (Python 3.8+).
 
 8. **`--audio-dir`** — audio/ создавался рядом со скриптом, не было возможности переопределить. Добавлен параметр.
+
+## v2 — fixes (по замечаниям ревью)
+
+9. **Голос по умолчанию** — kiri_voice.py использовал `filipp`, SKILL.md и tts.py — `alena`. Выровнено на `alena` везде.
+
+10. **Sample rate для .m4a/.flac** — hardcoded fallback 48000. Исправлено: ffprobe определяет sample rate из метаданных любого формата.
+
+11. **Retry** — API вызовы без retry, падение на 429/5xx. Добавлен retry: 3 попытки, exponential backoff (2s → 4s), для tts.py и stt.py.
+
+12. **Triggers** — SKILL.md не имел triggers в frontmatter, агент не знал когда загружать скилл. Добавлено 15 триггеров.
+
+13. **STT chunking** — лимит API ~30 сек / 1 MB, голосовые в Telegram до 1-2 минут. Добавлена автоматическая разбивка через ffmpeg (25 сек / 900 KB), склейка результатов.
 
 ## Ключ API
 - Сохранён в `credentials.json` рядом с SKILL.md

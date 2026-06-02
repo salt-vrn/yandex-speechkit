@@ -1,7 +1,22 @@
 ---
 name: yandex-speechkit
 description: "Yandex SpeechKit для Telegram-агентов: голосовые ответы (TTS) и распознавание голосовых сообщений (STT). Чистый скилл, никакой телефонии."
-version: 2
+version: 2.1
+triggers:
+  - yandex
+  - speechkit
+  - голос
+  - озвучить
+  - озвучь
+  - скажи голосом
+  - распознай голосовое
+  - голосовое сообщение
+  - tts
+  - stt
+  - speech
+  - voice
+  - синтез речи
+  - распознавание речи
 ---
 
 # Yandex SpeechKit — голос для Telegram-агента
@@ -112,6 +127,9 @@ python3 scripts/tts.py "Текст для озвучки" [--voice alena] [--emo
 python3 scripts/stt.py path/to/audio.ogg [--lang ru-RU] [--format oggopus] [--rate 48000]
 ```
 - Принимает `.ogg`, `.wav`, `.mp3`, `.flac`, `.m4a`
+- Автоматически разбивает длинные файлы (>25 сек / >900 KB) через ffmpeg
+- Sample rate определяется автоматически через ffprobe
+- Retry: 3 попытки с exponential backoff на 429/5xx
 - Возвращает распознанный текст в stdout
 
 ### kiri_voice.py — обёртка для Hermes
@@ -156,8 +174,8 @@ Yandex TTS v1 **не принимает JSON**. Ошибка «unsupported conte
 2. `credentials.json` рядом с SKILL.md (директория проекта)
 3. `credentials.json` в workspace текущего Hermes-профиля (`$HERMES_HOME/credentials.json`)
 
-### Python 3.10+
-Скрипт `kiri_voice.py` использует аннотацию `str | None` — нужен Python 3.10+. Если версия старше — заменить на `Optional[str]`.
+### Python 3.8+
+Скрипты используют `Optional[str]` из `typing` — совместимо с Python 3.8+.
 
 ### Зависимости
 Нужен `requests`: `pip install requests`. Обычно уже стоит, но если нет — скрипт упадёт с `ModuleNotFoundError`.
