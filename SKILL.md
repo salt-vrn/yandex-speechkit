@@ -1,7 +1,7 @@
 ---
 name: yandex-speechkit
 description: "Yandex SpeechKit для Telegram-агентов: голосовые ответы (TTS) и распознавание голосовых сообщений (STT). Чистый скилл, никакой телефонии."
-version: 3.3
+version: 3.4
 triggers:
   - yandex
   - speechkit
@@ -267,10 +267,16 @@ Telegram голосовые сообщения требуют `.ogg` (Opus). И�
 Когда `stt.py` используется как command-type STT provider в Hermes (`stt.providers.yandex.type: command`), **stdout = только распознанный текст**. Все диагностические сообщения (🎤, ✅, ⚠️) обязаны идти в `stderr` (`print(..., file=sys.stderr)`). Если в stdout попадёт мусор — Hermes передаст его агенту как транскрипцию, и ответ будет испорчен. Скрипт `stt.py` уже исправлен (v3.3), но если модифицируешь — проверяй `2>/dev/null` при тесте.
 
 ### credentials.json — два имени ключа
-Скрипты проверяют оба имени: `yandex_speechkit_api_key` и `yandex_api_key`. В документации AI Studio ключ называется `YANDEX_API_KEY`, но в инструкциях установки скилла используется `yandex_speechkit_api_key`. Оба работают.
+Скрипты проверяют оба имени: `yandex_speechkit_api_key` и `yandex_api_key`. В документации AI Studio ключ называется `YANDEX_API_KEY`, но в инструкциях установки скилла используется `yandex_speechkit_api_key`. Оба работают. Приоритет: env var → credentials.json рядом со скриптом → Hermes home → OpenClaw home.
 
-### Whisper плохо работает с русским
-Встроенный Whisper в Hermes (local provider) плохо распознаёт русскую речь — пропускает слова, путает окончания. Yandex SpeechKit значительно лучше для русского языка. Это главная причина настроить command STT provider вместо local/Groq.
+### Проверка через лог-файл
+Hermes не пишет в логи какой STT провайдер обработал голосовое. Добавить в `stt.py` блок логирования в `/tmp/yandex-stt.log` — единственный способ убедиться что Yandex STT вызывается, а не Whisper.
+
+## Цены (ориентировочно)ча
+Скрипты проверяют оба имени: `yandex_speechkit_api_key` и `yandex_api_key`. В документации AI Studio ключ называется `YANDEX_API_KEY`, но в инструкциях установки скилла используется `yandex_speechkit_api_key`. Оба работают. Приоритет: env var → credentials.json рядом со скриптом → Hermes home → OpenClaw home.
+
+### Проверка через лог-файл
+Hermes не пишет в логи какой STT провайдер обработал голосовое. Добавить в `stt.py` блок логирования в `/tmp/yandex-stt.log` — единственный способ убедиться что Yandex STT вызывается, а не Whisper.
 
 ## Цены (ориентировочно)
 
