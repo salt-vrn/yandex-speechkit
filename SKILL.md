@@ -1,7 +1,7 @@
 ---
 name: yandex-speechkit
 description: "Yandex SpeechKit для Telegram-агентов: голосовые ответы (TTS) и распознавание голосовых сообщений (STT). Чистый скилл, никакой телефонии."
-version: 3.4
+version: 3.5
 triggers:
   - yandex
   - speechkit
@@ -39,6 +39,7 @@ triggers:
 ### 2. Установить зависимости
 ```bash
 pip install requests
+apt install ffmpeg  # нужен для stt.py (разбивка длинных аудио)
 ```
 
 ### 3. Установить скрипты
@@ -264,10 +265,16 @@ Telegram голосовые сообщения требуют `.ogg` (Opus). И�
 Для распознавания длинных аудио (>25 сек) нужен `ffmpeg` и `ffprobe`. Установка: `apt install ffmpeg` или `brew install ffmpeg`.
 
 ### stdout command provider — только текст!
-Когда `stt.py` используется как command-type STT provider в Hermes (`stt.providers.yandex.type: command`), **stdout = только распознанный текст**. Все диагностические сообщения (🎤, ✅, ⚠️) обязаны идти в `stderr` (`print(..., file=sys.stderr)`). Если в stdout попадёт мусор — Hermes передаст его агенту как транскрипцию, и ответ будет испорчен. Скрипт `stt.py` уже исправлен (v3.3), но если модифицируешь — проверяй `2>/dev/null` при тесте.
+Когда `stt.py` используется как command-type STT provider в Hermes (`stt.providers.yandex.type: command`), **stdout = только распознанный текст**. Все диагностические сообщения (🎤, ✅, ⚠️) обязаны идти в `stderr` (`print(..., file=sys.stderr)`). Если в stdout попадёт мусор — Hermes передаст его агенту как транскрипцию, и ответ будет испорчен. Скрипт `stt.py` уже исправлен (v3.3), но если модифицируешь — проверяй `python3 stt.py file.ogg 2>/dev/null` при тесте (должен вывести только текст).
 
 ### credentials.json — два имени ключа
 Скрипты проверяют оба имени: `yandex_speechkit_api_key` и `yandex_api_key`. В документации AI Studio ключ называется `YANDEX_API_KEY`, но в инструкциях установки скилла используется `yandex_speechkit_api_key`. Оба работают. Приоритет: env var → credentials.json рядом со скриптом → Hermes home → OpenClaw home.
+
+### ffmpeg — обязателен для STT
+`stt.py` использует `ffmpeg` и `ffprobe` для разбивки длинных аудио (>25 сек / >900 KB). Без ffmpeg длинные голосовые не распознаются. Установка: `apt install ffmpeg` или `brew install ffmpeg`.
+
+### OpenClaw: MEDIA: в stdout не используется
+Строка `MEDIA:` в выводе tts.py нужна только для Hermes. OpenClaw-агент берёт путь из строки `✅ Сохранено:` и отправляет через `message(filePath=..., asVoice=true, buttons=[])`. MEDIA: не мешает, но и не помогает.
 
 ## Цены (ориентировочно)
 
@@ -351,30 +358,103 @@ hermes gateway restart
 
 ### Troubleshooting: какой провайдер используется?
 
-Hermes не пишет в логи какой STT провайдер обработал голосовое. Чтобы проверить:
+stt.py пишет лог в `/tmp/yandex-stt.log` при каждом вызове (встроен с v3.4):
 
-1. **Добавить логирование в stt.py** (в блок `if __name__ == "__main__"`):
-```python
-import datetime
-with open("/tmp/yandex-stt.log", "a") as _f:
-    _f.write(f"{datetime.datetime.now().isoformat()} STT called: {args.file} lang={args.lang}\n")
-```
-
-2. Отправить голосовое сообщение агенту.
-
-3. Проверить лог:
 ```bash
 cat /tmp/yandex-stt.log
+# 2026-06-02T19:53:43 STT called: audio.ogg lang=ru-RU
+# 2026-06-02T19:53:43 STT result: текст транскрипции
 ```
+
 Если файл пуст или не существует — Yandex STT **не вызывался** (gateway использует другой провайдер).
 
-4. **Проверить stdout vs stderr** при ручном тесте:
+Проверить что stdout чистый (без диагностики):
 ```bash
 python3 scripts/stt.py /path/to/audio.ogg 1>/tmp/out.txt 2>/tmp/err.txt
 cat /tmp/out.txt  # ← только текст транскрипции
 cat /tmp/err.txt  # ← диагностика (🎤, ✅)
 ```
-Если в stdout есть эмодзи-строки — сломан redirect в stderr, Hermes получит мусор.
+
+## Настройка STT в OpenClaw
+
+OpenClaw обрабатывает входящие голосовые сообщения через `tools.media.audio` — секцию в конфиге gateway. Yandex STT подключается как **CLI-провайдер**.
+
+### Как это работает
+
+1. Пользователь отправляет голосовое в Telegram
+2. OpenClaw скачивает .ogg файл в `/root/.openclaw/media/inbound/`
+3. Вызывает CLI-команду из `tools.media.audio.models`, подставляя `{{MediaPath}}`
+4. Читает stdout — это транскрипт
+5. Передаёт текст агенту как содержимое голосового сообщения
+
+### Настройка
+
+Добавить в `~/.openclaw/openclaw.json` секцию `tools.media.audio`:
+
+```json
+{
+  "tools": {
+    "media": {
+      "audio": {
+        "enabled": true,
+        "language": "ru-RU",
+        "timeoutSeconds": 120,
+        "echoTranscript": true,
+        "echoFormat": "🎤 \"{transcript}\"",
+        "models": [
+          {
+            "type": "cli",
+            "command": "python3",
+            "args": [
+              "/root/.openclaw/workspace/skills/yandex-speechkit/scripts/stt.py",
+              "{{MediaPath}}",
+              "--lang",
+              "ru-RU"
+            ],
+            "capabilities": ["audio"]
+          }
+        ]
+      }
+    }
+  }
+}
+```
+
+**Плейсхолдеры:**
+- `{{MediaPath}}` — абсолютный путь к аудиофайлу (подставляется OpenClaw автоматически)
+
+**Параметры:**
+- `echoTranscript: true` — показывает распознанный текст в чате перед ответом агента
+- `echoFormat` — формат эхо (по умолчанию `📝 "{transcript}"`)
+- `language` — язык распознавания
+- `timeoutSeconds` — таймаут CLI-команды
+
+### Применение
+
+После правки конфига — перезапустить gateway:
+```bash
+systemctl --user restart openclaw-gateway
+```
+
+### Проверка
+
+1. Отправить голосовое сообщение агенту
+2. Проверить лог:
+```bash
+cat /tmp/yandex-stt.log
+```
+Должны быть строки `STT called:` и `STT result:`
+
+3. Проверить stdout vs stderr:
+```bash
+python3 /root/.openclaw/workspace/skills/yandex-speechkit/scripts/stt.py /path/to/audio.ogg 1>/tmp/out.txt 2>/tmp/err.txt
+cat /tmp/out.txt  # ← только текст транскрипции
+cat /tmp/err.txt  # ← диагностика (🎤, ✅)
+```
+
+### Возврат на дефолтный STT
+
+Удалить секцию `tools.media.audio` из `openclaw.json` и перезапустить gateway.
 
 ## Установка на OpenClaw
 
@@ -382,8 +462,15 @@ cat /tmp/err.txt  # ← диагностика (🎤, ✅)
 
 1. Скопировать скилл в `~/.openclaw/workspace/skills/yandex-speechkit/`
 2. Создать `credentials.json` с API-ключом (рядом с SKILL.md или в `~/.openclaw/workspace/credentials.json`)
-3. Установить зависимости: `pip install requests`
+3. Установить зависимости:
+```bash
+pip install requests
+apt install ffmpeg  # нужен для STT (длинные аудио >25 сек)
+```
 4. Обновить `TOOLS.md` (шаблон ниже)
+5. Настроить STT в конфиге OpenClaw (см. секцию "Настройка STT в OpenClaw" ниже)
+6. Перезапустить gateway: `systemctl --user restart openclaw-gateway`
+7. Проверить: отправить голосовое и проверить `cat /tmp/yandex-stt.log`
 
 ### Шаблон TOOLS.md для OpenClaw
 
@@ -395,7 +482,7 @@ cat /tmp/err.txt  # ← диагностика (🎤, ✅)
 ### TTS (текст → голос)
 Сгенерировать аудио:
 ```
-python3 ~/.openclaw/workspace/skills/yandex-speechkit/scripts/tts.py "Текст для озвучки" --voice oksana
+python3 /root/.openclaw/workspace/skills/yandex-speechkit/scripts/tts.py "Текст для озвучки" --voice oksana
 ```
 Путь к файлу будет в stdout (строка `✅ Сохранено:`).
 
@@ -404,14 +491,23 @@ python3 ~/.openclaw/workspace/skills/yandex-speechkit/scripts/tts.py "Текст
 message(action="send", filePath="/path/to/audio.ogg", asVoice=true, buttons=[])
 ```
 
+Голоса: oksana (по умолчанию), alena, filipp, ermil, jane, omazh, zahar
+Формат: oggopus (по умолчанию, для Telegram)
+Лимит: 5000 символов за запрос (автобreak)
+Ключ: credentials.json рядом с SKILL.md или ~/.openclaw/workspace/credentials.json
+
 ### STT (голос → текст)
-Распознать аудио:
+Входящие голосовые автоматически транскрибируются через Yandex STT.
+Настроено в tools.media.audio (CLI-провайдер через stt.py).
+
+Распознать аудио вручную:
 ```
-python3 ~/.openclaw/workspace/skills/yandex-speechkit/scripts/stt.py /path/to/audio.ogg
+python3 /root/.openclaw/workspace/skills/yandex-speechkit/scripts/stt.py /path/to/audio.ogg
 ```
 
-### Голоса
-- oksana (по умолчанию), alena, filipp, ermil, jane, omazh, zahar
-- Формат: oggopus (по умолчанию, для Telegram)
-- Лимит: 5000 символов за запрос
+### Зависимости
+```
+pip install requests
+apt install ffmpeg  # нужен для STT (длинные аудио >25 сек)
+```
 ```

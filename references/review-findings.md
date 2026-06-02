@@ -83,3 +83,27 @@
 - Сохранён в `credentials.json` рядом с SKILL.md
 - Источник: Леонид, 28.05.2026
 - Документация: https://aistudio.yandex.ru/docs/en/ai-studio/quickstart/
+
+## v3.4 — Hermes STT integration
+
+21. **stt.py как command STT provider** — `stt.py` подключён как внешняя команда в `config.yaml` (`stt.providers.yandex.type: command`). Все `print()` диагностики → `file=sys.stderr`, stdout = только транскрипт.
+
+22. **Лог-файл** — stt.py пишет invocation log в `/tmp/yandex-stt.log` для подтверждения что Yandex STT вызывается.
+
+23. **Duplicate content** — строки 275-279 в SKILL.md были мусорным дубликатом с артефактом "ча". Исправлено.
+
+24. **ffmpeg warning** — `split_audio()` теперь предупреждает если ffmpeg не установлен.
+
+25. **Troubleshooting** — заменён "добавь лог вручную" на "лог уже встроен с v3.4".
+
+## v3.5 — OpenClaw integration
+
+26. **OpenClaw STT config** — добавлена секция "Настройка STT в OpenClaw" с JSON-конфигом `tools.media.audio` и CLI-провайдером. Плейсхолдер `{{MediaPath}}` подтверждён документацией OpenClaw.
+
+27. **TOOLS.md template** — обновлён шаблон с полными инструкциями (credentials, message-отправка, зависимости, автотранскрипция).
+
+28. **ffmpeg dependency** — добавлен в зависимости и Quick Start, и в шаблон TOOLS.md.
+
+29. **PITFALLS** — добавлены: "ffmpeg обязателен для STT" и "OpenClaw: MEDIA: в stdout не используется".
+
+30. **Установка на OpenClaw** — шаги 5-7: настройка tools.media.audio, restart gateway, проверка лога.
