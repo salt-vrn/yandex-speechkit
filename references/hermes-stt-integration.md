@@ -65,3 +65,7 @@ cat /tmp/yandex-stt.log
 hermes config set stt.provider local
 hermes gateway restart
 ```
+
+### Pitfall: обновляйте ВСЕ файлы
+
+При обновлении скилла из репозитория копируйте **все** файлы, не только SKILL.md. Если скрипты (`stt.py`, `tts.py`) устареют — command provider может отдавать Hermes'у эмодзи-строки вместо чистого текста. Проверяй: `python3 stt.py file.ogg 2>/dev/null` → должен быть только текст.

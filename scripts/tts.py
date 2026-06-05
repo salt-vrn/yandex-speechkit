@@ -36,8 +36,31 @@ import requests
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_DIR = SCRIPT_DIR.parent
 
-# audio/ по умолчанию рядом со скриптом, но можно переопределить через --audio-dir
-DEFAULT_AUDIO_DIR = PROJECT_DIR / "audio"
+
+def _resolve_audio_dir() -> Path:
+    """Определить директорию для аудио. Приоритет:
+    1. HERMES_HOME/audio_cache/ (Hermes agents — gateway пропускает только эти пути)
+    2. ~/.hermes/audio_cache/ (Hermes, если HERMES_HOME не задан)
+    3. ~/.openclaw/media/audio/ (OpenClaw)
+    4. PROJECT_DIR/audio/ (fallback)
+    """
+    hermes_home = os.environ.get("HERMES_HOME")
+    if hermes_home:
+        return Path(hermes_home) / "audio_cache"
+
+    home = Path.home()
+    hermes_cache = home / ".hermes" / "audio_cache"
+    if hermes_cache.parent.exists():
+        return hermes_cache
+
+    openclaw_audio = home / ".openclaw" / "media" / "audio"
+    if openclaw_audio.parent.exists():
+        return openclaw_audio
+
+    return PROJECT_DIR / "audio"
+
+
+DEFAULT_AUDIO_DIR = _resolve_audio_dir()
 
 TTS_URL = "https://tts.api.cloud.yandex.net/speech/v1/tts:synthesize"
 
@@ -71,25 +94,25 @@ def get_api_key() -> str:
     # 2. credentials.json в папке проекта (рядом с SKILL.md)
     cred_file = PROJECT_DIR / "credentials.json"
     if not cred_file.exists():
-        # 3. credentials.json в workspace (Hermes или OpenClaw)
+        # credentials.json в workspace (Hermes или OpenClaw)
         hermes_home = os.environ.get("HERMES_HOME")
+        candidates = []
         if hermes_home:
-            cred_file = Path(hermes_home) / "credentials.json"
-        else:
-            home = Path.home()
-            # Hermes: ~/.hermes/profiles/*/workspace/credentials.json
-            profiles_dir = home / ".hermes" / "profiles"
-            if profiles_dir.exists():
-                for profile_dir in profiles_dir.iterdir():
-                    candidate = profile_dir / "workspace" / "credentials.json"
-                    if candidate.exists():
-                        cred_file = candidate
-                        break
-            # OpenClaw: ~/.openclaw/workspace/credentials.json
-            if not cred_file.exists():
-                openclaw_cred = home / ".openclaw" / "workspace" / "credentials.json"
-                if openclaw_cred.exists():
-                    cred_file = openclaw_cred
+            candidates.append(Path(hermes_home) / "credentials.json")
+        home = Path.home()
+        # Hermes default: ~/.hermes/credentials.json
+        candidates.append(home / ".hermes" / "credentials.json")
+        # Hermes profiles: ~/.hermes/profiles/*/workspace/credentials.json
+        profiles_dir = home / ".hermes" / "profiles"
+        if profiles_dir.exists():
+            for profile_dir in profiles_dir.iterdir():
+                candidates.append(profile_dir / "workspace" / "credentials.json")
+        # OpenClaw: ~/.openclaw/workspace/credentials.json
+        candidates.append(home / ".openclaw" / "workspace" / "credentials.json")
+        for candidate in candidates:
+            if candidate.exists():
+                cred_file = candidate
+                break
 
     if cred_file.exists():
         try:
